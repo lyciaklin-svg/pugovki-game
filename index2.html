@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Пуговичный дождь</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 10%, #2a1a4a 0%, #120a24 80%);
+    color: #fff; user-select: none; touch-action: manipulation;
+  }
+  #game { position: fixed; inset: 0; overflow: hidden; }
+  
+  #topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 600; z-index: 20; pointer-events: none;
+  }
+  #topbar span { background: rgba(255,255,255,.1); padding: 6px 12px; border-radius: 20px; backdrop-filter: blur(4px); }
+  
+  #target-area {
+    position: absolute; top: calc(50px + env(safe-area-inset-top)); left: 50%;
+    transform: translateX(-50%); z-index: 20; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; width: 100%; pointer-events: none;
+  }
+  #target {
+    font-size: 13px; opacity: .9;
+    background: rgba(255,255,255,.08); padding: 6px 16px; border-radius: 14px;
+    white-space: normal; text-align: center; backdrop-filter: blur(4px);
+    max-width: 90%; line-height: 1.4;
+  }
+  #target b { color: #feca57; }
+  
+  .note-color-0 { color: #ff6b6b !important; font-weight: bold; }
+  .note-color-1 { color: #feca57 !important; font-weight: bold; }
+  .note-color-2 { color: #48dbfb !important; font-weight: bold; }
+  .note-color-3 { color: #1dd1a1 !important; font-weight: bold; }
+  .note-color-4 { color: #c56cf0 !important; font-weight: bold; }
+
+  #hint {
+    font-size: 12px; color: #feca57; font-weight: 700;
+    background: rgba(254, 202, 87, 0.2); padding: 4px 12px; border-radius: 10px;
+    opacity: 0; transition: opacity 0.3s; text-transform: uppercase; letter-spacing: 1px;
+  }
+  #hint.show { opacity: 1; }
+  
+  #slots { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; max-width: 95%; }
+  .slot {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 2px dashed rgba(255,255,255,.3);
+    display: flex; align-items: center; justify-content: center; opacity: .5;
+    transition: all .2s; background: rgba(0,0,0,0.2);
+    flex-shrink: 0; position: relative; overflow: hidden;
+  }
+  .slot.filled { border-style: solid; opacity: 1; box-shadow: 0 0 15px currentColor; background: transparent;}
+  .slot.hint { transform: scale(1.2); border-color: #feca57; box-shadow: 0 0 20px #feca57; opacity: 1 !important; }
+
+  .pbutton, .slot-btn {
+    border-radius: 50%; border: none; position: relative;
+    box-shadow: inset 0 -5px 10px rgba(0,0,0,.4), inset 0 5px 10px rgba(255,255,255,.5), 0 8px 15px rgba(0,0,0,.5), 0 2px 4px rgba(0,0,0,.6);
+    overflow: hidden;
+  }
+  .pbutton { position: absolute; cursor: pointer; z-index: 5; transition: transform 0.1s, box-shadow 0.2s; }
+  .pbutton:active { transform: scale(0.9); }
+  
+  .pbutton.correct-flash { box-shadow: inset 0 -5px 10px rgba(0,0,0,.4), inset 0 5px 10px rgba(255,255,255,.5), 0 0 30px 10px rgba(46, 213, 115, 0.8) !important; border: 2px solid #2ed573 !important; }
+  .pbutton.wrong-flash { box-shadow: inset 0 -5px 10px rgba(0,0,0,.4), inset 0 5px 10px rgba(255,255,255,.5), 0 0 30px 10px rgba(255, 71, 87, 0.8) !important; border: 2px solid #ff4757 !important; }
+
+  .snowflake {
+    position: absolute; z-index: 5; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px; text-shadow: 0 0 15px #48dbfb;
+    animation: spin 2s linear infinite;
+  }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  .note-float {
+    position: absolute; z-index: 30; color: #fff; font-weight: 900; font-size: 24px;
+    pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    animation: floatUp 0.6s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.5); }
+  }
+  
+  .slot-btn { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; }
+
+  .pbutton::after, .slot-btn::after {
+    content: ''; position: absolute; top: 12%; left: 15%; width: 35%; height: 25%; border-radius: 50%;
+    background: rgba(255,255,255,.6); transform: rotate(-45deg); filter: blur(1px); pointer-events: none;
+  }
+  .pbutton::before, .slot-btn::before {
+    content: ''; position: absolute; bottom: 10%; right: 15%; width: 20%; height: 10%; border-radius: 50%;
+    background: rgba(255,255,255,.2); transform: rotate(-45deg); filter: blur(1px); pointer-events: none;
+  }
+
+  .holes { position: absolute; inset: 0; pointer-events: none; }
+  .hole {
+    position: absolute; width: 18%; height: 18%; border-radius: 50%; background: #111;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.8), 0 1px 1px rgba(255,255,255,0.4);
+    transform: translate(-50%, -50%);
+  }
+  .hole::after { content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.5); }
+
+  .btn-1 { background: linear-gradient(45deg, #ff6b6b 25%, #ff8c8c 25%, #ff8c8c 50%, #ff6b6b 50%, #ff6b6b 75%, #ff8c8c 75%); background-size: 15px 15px; }
+  .btn-1 .hole:nth-child(1) { top: 50%; left: 50%; }
+  .btn-2 { background-color: #feca57; background-image: radial-gradient(rgba(0,0,0,.15) 15%, transparent 15%); background-size: 8px 8px; }
+  .btn-2 .hole:nth-child(1) { top: 50%; left: 35%; }
+  .btn-2 .hole:nth-child(2) { top: 50%; left: 65%; }
+  .btn-3 { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.3) 1.5px, transparent 1.5px), radial-gradient(circle at 0 0, rgba(255,255,255,0.3) 1.5px, transparent 1.5px), radial-gradient(circle at 100% 100%, rgba(255,255,255,0.3) 1.5px, transparent 1.5px); background-size: 15px 15px; background-color: #48dbfb; }
+  .btn-3 .hole:nth-child(1) { top: 35%; left: 35%; }
+  .btn-3 .hole:nth-child(2) { top: 35%; left: 65%; }
+  .btn-3 .hole:nth-child(3) { top: 70%; left: 50%; }
+  .btn-4 { background: radial-gradient(circle, transparent 30%, rgba(0,0,0,0.15) 30%, rgba(0,0,0,0.15) 50%, transparent 50%); background-color: #1dd1a1; }
+  .btn-4 .hole:nth-child(1) { top: 35%; left: 35%; }
+  .btn-4 .hole:nth-child(2) { top: 35%; left: 65%; }
+  .btn-4 .hole:nth-child(3) { top: 65%; left: 35%; }
+  .btn-4 .hole:nth-child(4) { top: 65%; left: 65%; }
+  .btn-5 { background: linear-gradient(90deg, rgba(0,0,0,0.15) 50%, transparent 50%), #c56cf0; background-size: 6px 100%; }
+  .btn-5 .hole:nth-child(1) { top: 30%; left: 30%; }
+  .btn-5 .hole:nth-child(2) { top: 30%; left: 70%; }
+  .btn-5 .hole:nth-child(3) { top: 50%; left: 50%; }
+  .btn-5 .hole:nth-child(4) { top: 70%; left: 30%; }
+  .btn-5 .hole:nth-child(5) { top: 70%; left: 70%; }
+
+  #overlay, #pauseOverlay {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
+    gap: 15px; background: rgba(10,6,20,.95); z-index: 50; text-align: center; padding: 24px;
+    backdrop-filter: blur(5px); overflow-y: auto;
+  }
+  #overlay.show, #pauseOverlay.show { display: flex; }
+  h1 { font-size: 28px; margin-bottom: 5px; color: #fff; }
+  
+  .stats-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 12px 20px; width: 100%; max-width: 300px; display: flex; justify-content: space-between; margin-bottom: 10px; }
+  .stats-box div { display: flex; flex-direction: column; align-items: center; }
+  .stats-box span { font-size: 12px; color: #aaa; }
+  .stats-box b { font-size: 18px; color: #feca57; }
+
+  .legend { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 10px 15px; 
+    margin: 10px 0; 
+    background: rgba(255,255,255,0.05); 
+    padding: 15px; 
+    border-radius: 16px; 
+    text-align: left; 
+    width: 100%;
+    max-width: 300px;
+  }
+  .legend-row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; }
+  .legend-btn { width: 28px; height: 28px; border-radius: 50%; position: relative; flex-shrink: 0; overflow: hidden; }
+  .legend-btn .hole { width: 20%; height: 20%; }
+
+  .btn {
+    padding: 14px 32px; border-radius: 30px; background: #8b5cf6; color: #fff;
+    font-weight: 700; font-size: 17px; border: none; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(139,92,246,.5); transition: all .2s;
+    width: 100%; max-width: 250px;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn-secondary { background: rgba(255,255,255,.15); box-shadow: none; }
+  .ovText { font-size: 16px; line-height: 1.5; opacity: 0.9; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="topbar">
+    <span id="levelLbl">Уровень 1</span>
+    <span id="score">Пуговки: 0</span>
+    <div style="display:flex; gap:8px;">
+      <span id="timer">⏱ 30</span>
+      <button id="pauseBtn" style="pointer-events:auto; background:rgba(255,255,255,.15); border:none; color:#fff; font-size:16px; padding:6px 10px; border-radius:20px; cursor:pointer;">⏸</button>
+    </div>
+  </div>
+  
+  <div id="target-area">
+    <div id="target">Собери мелодию:<br><span id="targetDesc" style="font-size:12px; color:#aaa;"></span><br><b id="targetNotes"></b></div>
+    <div id="hint">Повтори мелодию!</div>
+    <div id="slots"></div>
+  </div>
+
+  <div id="pauseOverlay">
+    <h1>⏸ Пауза</h1>
+    <button class="btn" id="resumeBtn">Продолжить</button>
+    <button class="btn btn-secondary" id="quitBtn">Выйти в меню</button>
+  </div>
+  
+  <div id="overlay" class="show">
+    <h1 id="ovTitle">Пуговичный дождь</h1>
+    
+    <div class="stats-box">
+      <div><span>Лучший счёт</span><b id="bestScoreLbl">0</b></div>
+      <div><span>Всего собрано</span><b id="totalScoreLbl">0</b></div>
+    </div>
+
+    <div id="startLegend" class="legend">
+      <div style="grid-column: span 2; margin-bottom: 5px; font-size: 13px; color: #feca57; font-weight: 600; text-align: center;">Запомни мелодию, затем лови пуговицы!</div>
+      
+      <div class="legend-row"><div class="legend-btn btn-1"><div class="holes"><div class="hole"></div></div></div><span>До</span></div>
+      <div class="legend-row"><div class="legend-btn btn-2"><div class="holes"><div class="hole"></div><div class="hole"></div></div></div><span>Ре</span></div>
+      <div class="legend-row"><div class="legend-btn btn-3"><div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div></div></div><span>Ми</span></div>
+      <div class="legend-row"><div class="legend-btn btn-4"><div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div><div class="hole"></div></div></div><span>Фа</span></div>
+      <div class="legend-row" style="grid-column: span 2; justify-content: center;"><div class="legend-btn btn-5"><div class="holes"><div class="hole"></div><div class="hole"></div><div class="hole"></div><div class="hole"></div><div class="hole"></div></div></div><span>Соль</span></div>
+    </div>
+
+    <p id="ovText" style="display:none;"></p>
+    <button class="btn" id="startBtn">Играть</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const NOTES = { 'до': 261.63, 'ре': 293.66, 'ми': 329.63, 'фа': 349.23, 'соль': 392.00 };
+  
+  const COLORS = [
+    { name: 'до',   color: '#ff6b6b', class: 'btn-1', note: NOTES['до'], holes: 1 },
+    { name: 'ре',   color: '#feca57', class: 'btn-2', note: NOTES['ре'], holes: 2 },
+    { name: 'ми',   color: '#48dbfb', class: 'btn-3', note: NOTES['ми'], holes: 3 },
+    { name: 'фа',   color: '#1dd1a1', class: 'btn-4', note: NOTES['фа'], holes: 4 },
+    { name: 'соль', color: '#c56cf0', class: 'btn-5', note: NOTES['соль'], holes: 5 }
+  ];
+
+  // Ускорил скорость падения и уменьшил задержку спавна
+  const LEVELS = [
+    { title: 'Уровень 1', desc: 'В лесу родилась ёлочка', target: [0, 1, 2, 1], time: 35, speedBase: 3.0, spawnRate: 500 },
+    { title: 'Уровень 2', desc: 'Jingle Bells', target: [2, 2, 2, 4, 2, 1], time: 40, speedBase: 3.5, spawnRate: 450 },
+    { title: 'Уровень 3', desc: 'Маленькой ёлочке', target: [2, 3, 4, 2, 1, 0, 1, 2], time: 45, speedBase: 4.0, spawnRate: 400 },
+    { title: 'Уровень 4', desc: 'We Wish You a Merry Christmas', target: [0, 3, 3, 4, 3, 2, 1, 2, 3, 0], time: 50, speedBase: 4.5, spawnRate: 380 },
+    { title: 'Уровень 5', desc: 'Last Christmas', target: [2, 2, 3, 2, 0, 1, 2, 2, 3, 2, 1, 0], time: 55, speedBase: 5.0, spawnRate: 350 }
+  ];
+
+  const gameEl = document.getElementById('game');
+  const slotsEl = document.getElementById('slots');
+  const scoreEl = document.getElementById('score');
+  const timerEl = document.getElementById('timer');
+  const levelLbl = document.getElementById('levelLbl');
+  const targetDesc = document.getElementById('targetDesc');
+  const targetNotes = document.getElementById('targetNotes');
+  const hintEl = document.getElementById('hint');
+  const overlay = document.getElementById('overlay');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const startLegend = document.getElementById('startLegend');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const quitBtn = document.getElementById('quitBtn');
+  
+  const bestScoreLbl = document.getElementById('bestScoreLbl');
+  const totalScoreLbl = document.getElementById('totalScoreLbl');
+
+  let audioCtx = null;
+  let score = 0, timeLeft = 0, timerId = null, spawnId = null, running = false;
+  let currentLevelIndex = 0;
+  let collected = [];
+  let fallingButtons = []; 
+  let spawnHistory = []; 
+  let lastTime = 0;
+  let gameLoopId = null;
+  let isPaused = false;
+  let isShowingHint = false;
+  let activeOscillators = 0;
+
+  function loadStats() {
+    let best = localStorage.getItem('pugovki_best_score') || 0;
+    let total = localStorage.getItem('pugovki_total_score') || 0;
+    bestScoreLbl.textContent = best;
+    totalScoreLbl.textContent = total;
+  }
+  
+  function saveStats(finalScore) {
+    let best = parseInt(localStorage.getItem('pugovki_best_score') || 0);
+    let total = parseInt(localStorage.getItem('pugovki_total_score') || 0);
+    
+    if (finalScore > best) localStorage.setItem('pugovki_best_score', finalScore);
+    localStorage.setItem('pugovki_total_score', total + finalScore);
+    loadStats();
+  }
+
+  function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playNote(freq, dur = 0.8) {
+    if (!audioCtx || activeOscillators > 20) return; 
+    const t = audioCtx.currentTime;
+    const masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+    masterGain.gain.setValueAtTime(0, t);
+    masterGain.gain.linearRampToValueAtTime(0.4, t + 0.015);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    
+    const harmonics = [{ mult: 1, vol: 1.0, type: 'sine' }, { mult: 2, vol: 0.4, type: 'triangle' }, { mult: 3, vol: 0.15, type: 'sine' }];
+    activeOscillators += harmonics.length;
+    
+    harmonics.forEach(h => {
+      const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+      osc.type = h.type; osc.frequency.setValueAtTime(freq * h.mult, t); osc.frequency.linearRampToValueAtTime(freq * h.mult * 0.99, t + dur);
+      g.gain.value = h.vol; osc.connect(g).connect(masterGain);
+      osc.start(t); osc.stop(t + dur + 0.1);
+    });
+    setTimeout(() => { activeOscillators -= harmonics.length; }, dur * 1000);
+  }
+
+  // ПРАЗДНИЧНЫЙ ЗВУК ДЛЯ СНЕЖИНКИ (Арпеджио)
+  function playSnowflakeSound() {
+    if (!audioCtx) return;
+    const freqs = [1046.50, 1318.51, 1567.98, 2093.00]; // До-Ми-Соль-До (высокие)
+    freqs.forEach((f, i) => {
+      setTimeout(() => {
+        playNote(f, 0.4); // Короткий звонкий звук
+      }, i * 60); // Быстрое арпеджио
+    });
+  }
+
+  function playMelody(target) { target.forEach((c, i) => setTimeout(() => playNote(COLORS[c].note, 1.0), i * 400)); }
+  function getHolesHTML(c) { let h = `<div class="holes">`; for (let i = 0; i < c.holes; i++) h += `<div class="hole"></div>`; return h + `</div>`; }
+  function formatNotes(target) { return target.map(i => `<span class="note-color-${i}">${COLORS[i].name}</span>`).join(' – '); }
+  function buildSlots(target) { slotsEl.innerHTML = ''; target.forEach(() => { const s = document.createElement('div'); s.className = 'slot'; slotsEl.appendChild(s); }); }
+
+  function playPreview() {
+    isShowingHint = true; hintEl.textContent = "Повтори мелодию!"; hintEl.classList.add('show');
+    const lvl = LEVELS[currentLevelIndex];
+    lvl.target.forEach((cIndex, i) => {
+      setTimeout(() => {
+        if (isPaused) return; 
+        const slot = slotsEl.children[i];
+        if (slot) {
+          const c = COLORS[cIndex];
+          slot.innerHTML = `<div class="slot-btn ${c.class}" style="color:${c.color}">${getHolesHTML(c)}</div>`;
+          slot.classList.add('hint');
+          playNote(c.note, 0.5);
+          setTimeout(() => { slot.classList.remove('hint'); if (collected.length === 0) slot.innerHTML = ''; }, 300);
+        }
+      }, i * 450);
+    });
+    const totalTime = lvl.target.length * 450 + 800;
+    setTimeout(() => {
+      if (isPaused) return;
+      isShowingHint = false; hintEl.classList.remove('show');
+      timerId = setInterval(tick, 1000);
+      for (let i = 0; i < 4; i++) spawnButton();
+      spawnId = setInterval(spawnButton, lvl.spawnRate);
+    }, totalTime);
+  }
+
+  function spawnButton() {
+    if (!running || isPaused || isShowingHint) return;
+    const lvl = LEVELS[currentLevelIndex], needIndex = lvl.target[collected.length];
+    
+    const isSnowflake = Math.random() < 0.1;
+
+    let counts = [0,0,0,0,0]; fallingButtons.forEach(fb => { if(!fb.isSnowflake) counts[fb.ci]++ });
+    let pool = [];
+    
+    if (!isSnowflake) {
+      for (let i = 0; i < COLORS.length; i++) {
+        let weight = 5 - counts[i]; if (weight < 1) weight = 1; 
+        if (i === needIndex) weight += 5;
+        if (spawnHistory.length >= 2 && spawnHistory[0] === i && spawnHistory[1] === i) weight = 0;
+        for (let w = 0; w < weight; w++) pool.push(i);
+      }
+    }
+
+    const ci = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : needIndex;
+    
+    if (!isSnowflake) {
+      spawnHistory.push(ci); if (spawnHistory.length > 2) spawnHistory.shift();
+    }
+
+    const c = isSnowflake ? null : COLORS[ci];
+    const size = isSnowflake ? 50 : (60 + Math.random() * 15);
+    
+    const pad = 16;
+    const maxX = window.innerWidth - size - pad;
+    const left = pad + Math.random() * Math.max(0, maxX - pad);
+    const top = -size - 20; 
+
+    let el;
+    if (isSnowflake) {
+      el = document.createElement('div');
+      el.className = 'snowflake';
+      el.textContent = '❄️';
+      el.style.cssText = `width:${size}px; height:${size}px; left:${left}px; top:${top}px;`;
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (isPaused || isShowingHint) return;
+        onCollectSnowflake(el, left, top);
+      });
+    } else {
+      el = document.createElement('button');
+      el.className = `pbutton ${c.class}`;
+      el.style.cssText = `width:${size}px; height:${size}px; left:${left}px; top:${top}px;`;
+      el.innerHTML = getHolesHTML(c);
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (isPaused || isShowingHint) return;
+        onCollect(el, ci, c);
+      });
+    }
+    
+    gameEl.appendChild(el);
+    
+    fallingButtons.push({ 
+      el, ci, c, x: left, y: top, 
+      speed: lvl.speedBase + Math.random() * 1.2, 
+      size,
+      isSnowflake 
+    });
+  }
+
+  function onCollectSnowflake(el, left, top) {
+    const idx = fallingButtons.findIndex(fb => fb.el === el);
+    if (idx !== -1) fallingButtons.splice(idx, 1);
+    
+    playSnowflakeSound(); // Новый праздничный звук
+    
+    const noteFloat = document.createElement('div');
+    noteFloat.className = 'note-float';
+    noteFloat.textContent = '+20 БОНУС!';
+    noteFloat.style.left = (left - 20) + 'px';
+    noteFloat.style.top = top + 'px';
+    noteFloat.style.color = '#48dbfb';
+    noteFloat.style.fontSize = '18px';
+    gameEl.appendChild(noteFloat);
+    setTimeout(() => noteFloat.remove(), 600);
+
+    score += 20;
+    updateScore();
+    
+    el.style.transition = 'transform 0.3s, opacity 0.3s';
+    el.style.transform = 'scale(2) rotate(180deg)';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 300);
+  }
+
+  function onCollect(el, ci, c) {
+    if (!running || isPaused || isShowingHint) return;
+    const noteFloat = document.createElement('div');
+    noteFloat.className = 'note-float';
+    noteFloat.textContent = c.name.toUpperCase();
+    noteFloat.style.left = (parseFloat(el.style.left) + 10) + 'px';
+    noteFloat.style.top = parseFloat(el.style.top) + 'px';
+    noteFloat.style.color = c.color;
+    gameEl.appendChild(noteFloat);
+    setTimeout(() => noteFloat.remove(), 600);
+
+    const idx = fallingButtons.findIndex(fb => fb.el === el);
+    if (idx === -1) return; 
+    fallingButtons.splice(idx, 1);
+    playNote(c.note, 0.5);
+
+    const lvl = LEVELS[currentLevelIndex];
+    const need = lvl.target[collected.length];
+    const isRight = ci === need;
+    if (isRight) el.classList.add('correct-flash');
+    else el.classList.add('wrong-flash');
+    setTimeout(() => { el.remove(); }, 250);
+
+    if (isRight) {
+      collected.push(need);
+      const slot = slotsEl.children[collected.length - 1];
+      slot.classList.add('filled');
+      slot.innerHTML = `<div class="slot-btn ${c.class}" style="color:${c.color}">${getHolesHTML(c)}</div>`;
+      slot.style.borderColor = c.color;
+      score += 10; updateScore();
+      if (collected.length === lvl.target.length) { finishLevel(true); return; }
+    } else {
+      score = Math.max(0, score - 3); updateScore();
+    }
+  }
+
+  function gameLoop(time) {
+    if (!running || isPaused) { lastTime = time; gameLoopId = requestAnimationFrame(gameLoop); return; }
+    if (!lastTime) lastTime = time;
+    const dt = (time - lastTime) / 1000; lastTime = time;
+    const maxY = window.innerHeight - 40;
+    for (let i = fallingButtons.length - 1; i >= 0; i--) {
+      const fb = fallingButtons[i];
+      if (!document.body.contains(fb.el)) { fallingButtons.splice(i, 1); continue; }
+      fb.y += fb.speed * dt * 100; 
+      if (fb.y > maxY) {
+        if (!fb.isSnowflake && fb.ci === LEVELS[currentLevelIndex].target[collected.length]) { score = Math.max(0, score - 5); updateScore(); }
+        fb.el.remove(); fallingButtons.splice(i, 1);
+      } else { fb.el.style.top = fb.y + 'px'; }
+    }
+    gameLoopId = requestAnimationFrame(gameLoop);
+  }
+
+  function tick() {
+    if (isPaused || isShowingHint) return;
+    timeLeft--; timerEl.textContent = '⏱ ' + timeLeft;
+    if (timeLeft <= 0) finishLevel(false);
+  }
+  function updateScore() { scoreEl.textContent = 'Пуговки: ' + score; }
+
+  function startLevel(index) {
+    currentLevelIndex = index;
+    const lvl = LEVELS[index];
+    initAudio(); collected = []; timeLeft = lvl.time; running = true; spawnHistory = []; isPaused = false;
+    fallingButtons.forEach(fb => fb.el.remove()); fallingButtons = [];
+    updateScore(); timerEl.textContent = '⏱ ' + timeLeft;
+    levelLbl.textContent = lvl.title; targetDesc.textContent = lvl.desc; targetNotes.innerHTML = formatNotes(lvl.target);
+    buildSlots(lvl.target);
+    overlay.classList.remove('show'); pauseOverlay.classList.remove('show');
+    clearInterval(timerId); clearInterval(spawnId); cancelAnimationFrame(gameLoopId);
+    lastTime = 0; gameLoopId = requestAnimationFrame(gameLoop);
+    playPreview();
+  }
+
+  function finishLevel(win) {
+    running = false; clearInterval(timerId); clearInterval(spawnId); cancelAnimationFrame(gameLoopId);
+    fallingButtons.forEach(fb => fb.el.remove()); fallingButtons = [];
+    
+    saveStats(score);
+    const lvl = LEVELS[currentLevelIndex];
+    
+    if (win) {
+      score += 50; updateScore(); setTimeout(() => playMelody(lvl.target), 300);
+      if (currentLevelIndex < LEVELS.length - 1) {
+        ovTitle.textContent = '🎉 Мелодия собрана!'; ovText.innerHTML = `Это была песня: <b>${lvl.desc}</b><br>Пуговок: ${score}`;
+        startBtn.textContent = 'Следующий уровень';
+        startBtn.onclick = () => { startLegend.style.display = 'none'; ovText.style.display = 'block'; startLevel(currentLevelIndex + 1); };
+      } else {
+        ovTitle.textContent = '🏆 Победа!'; ovText.innerHTML = `Последняя песня: <b>${lvl.desc}</b><br>Ты собрал все новогодние мелодии!<br>Итоговый счёт: <b>${score}</b>`;
+        startBtn.textContent = 'Играть заново';
+        startBtn.onclick = () => { score = 0; overlay.classList.add('show'); startLegend.style.display = 'grid'; ovText.style.display = 'none'; startBtn.textContent = 'Играть'; startBtn.onclick = () => { startLegend.style.display = 'none'; ovText.style.display = 'block'; score = 0; startLevel(0); }; };
+      }
+    } else {
+      ovTitle.textContent = '⏰ Время вышло'; ovText.innerHTML = `Не удалось собрать мелодию: <b>${lvl.desc}</b><br>Пуговок: <b>${score}</b>`;
+      startBtn.textContent = 'Попробовать ещё раз';
+      startBtn.onclick = () => { startLegend.style.display = 'none'; ovText.style.display = 'block'; startLevel(currentLevelIndex); };
+    }
+    overlay.classList.add('show');
+  }
+
+  pauseBtn.onclick = () => { if (!running) return; isPaused = true; pauseOverlay.classList.add('show'); };
+  
+  resumeBtn.onclick = () => { 
+    isPaused = false; 
+    pauseOverlay.classList.remove('show'); 
+    lastTime = 0; 
+    if (isShowingHint) playPreview(); 
+  };
+
+  quitBtn.onclick = () => {
+    running = false; isPaused = false; isShowingHint = false;
+    clearInterval(timerId); clearInterval(spawnId); cancelAnimationFrame(gameLoopId);
+    fallingButtons.forEach(fb => fb.el.remove()); fallingButtons = [];
+    pauseOverlay.classList.remove('show'); hintEl.classList.remove('show');
+    
+    overlay.classList.add('show');
+    startLegend.style.display = 'grid';
+    ovText.style.display = 'none';
+    ovTitle.textContent = 'Пуговичный дождь';
+    startBtn.textContent = 'Играть';
+  };
+
+  startBtn.onclick = () => { 
+    startLegend.style.display = 'none';
+    ovText.style.display = 'block';
+    score = 0; 
+    startLevel(0); 
+  };
+
+  loadStats();
+})();
+</script>
+</body>
+</html>
